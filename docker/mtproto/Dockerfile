@@ -5,8 +5,13 @@
 # container is ever needed.
 FROM debian:13-slim
 
+# wget: main.sh (menu [6], censorship check) and its own top-level
+# install.sh (menu [3], mtproxyl) both shell out to wget directly, with
+# no curl fallback and (for main.sh) no guard against set -e — missing
+# it crashes the menu the same way missing systemctl did.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
+        wget \
         ca-certificates \
         iptables \
         iproute2 \
