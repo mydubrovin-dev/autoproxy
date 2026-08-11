@@ -22,6 +22,31 @@ if [ -f "$MEKO_MAIN" ]; then
         echo "[autoproxy] SYN-FIX reapply skipped/failed (likely already active) — check with: docker exec -it <container> mekopr"
 fi
 
+# telemt's own installer only *starts* the daemon via systemd or openrc
+# (see install_service() upstream) — with neither available here, it
+# just prints "start it yourself" and does nothing. Our systemctl shim
+# stops that installer from crashing, but it doesn't make telemt
+# actually run: nothing was ever listening. This loop is the real
+# replacement for the systemd unit telemt wanted: check every 10s
+# whether it's running, (re)launch it as the `telemt` user (created by
+# telemt's own installer) if not. Runs for the lifetime of the
+# container, independent of whatever mekopr's menu thinks "restart"
+# means (which just calls the shimmed, no-op systemctl).
+supervise_telemt() {
+    local bin="/bin/telemt"
+    local cfg="/etc/telemt/telemt.toml"
+    while true; do
+        if [ -x "$bin" ] && [ -f "$cfg" ] && id telemt >/dev/null 2>&1; then
+            if ! pgrep -f "^${bin} ${cfg}\$" >/dev/null 2>&1; then
+                echo "[autoproxy] telemt not running — starting it (logs: /var/log/telemt.log)"
+                su -s /bin/sh telemt -c "${bin} ${cfg}" >>/var/log/telemt.log 2>&1 &
+            fi
+        fi
+        sleep 10
+    done
+}
+supervise_telemt &
+
 cat <<EOF
 ======================================================================
  autoproxy: MTProto-fix container is up.
@@ -39,6 +64,11 @@ cat <<EOF
  survives container recreation. The telemt binary itself (/bin) does
  not — if missing after a recreate, just reinstall it from the Telemt
  menu (Enter for latest version), it takes a few seconds.
+
+ telemt itself is supervised by this entrypoint (checked/restarted
+ every 10s) since there's no systemd/openrc in here for it to use —
+ see the README for why, and the same for MTG/MTProto.zig if you
+ switch engines (not currently supervised the same way).
 ======================================================================
 EOF
 
