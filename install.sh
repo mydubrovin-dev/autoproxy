@@ -9,6 +9,10 @@
 #   - MTProto-fix (github.com/Mekotofeuka/MTPROTO_FIX_By_MEKO) in Docker
 #   - fail2ban protecting sshd
 #
+# Also runs `dnf update -y` first (excluding openssh*, so it can't drop
+# the SSH session this is usually piped in over). Set AUTOPROXY_SKIP_UPDATE=1
+# to skip that step entirely.
+#
 # Override defaults via env vars, e.g.:
 #   AUTOPROXY_SQUID_USER=alice AUTOPROXY_SQUID_PASS=secret AUTOPROXY_SQUID_PORT=8080 \
 #     curl -fsSL .../install.sh | sudo bash
@@ -70,6 +74,11 @@ source "$INSTALL_DIR/lib/mtproto.sh"
 
 log_info "Starting autoproxy install on $(source /etc/os-release; echo "$PRETTY_NAME")..."
 
+if [ "${AUTOPROXY_SKIP_UPDATE:-0}" = "1" ]; then
+    log_warn "AUTOPROXY_SKIP_UPDATE=1 — skipping system update."
+else
+    system_update
+fi
 ensure_firewalld
 disable_ipv6
 setup_squid
@@ -80,6 +89,7 @@ deploy_mtproto
 log_info "All done."
 echo
 echo "Summary:"
+echo "  - System packages     : updated (openssh excluded, see README)"
 echo "  - IPv6                : disabled"
 echo "  - firewalld            : running, fail2ban bans through it (not raw iptables)"
 echo "  - Squid forward proxy : port ${AUTOPROXY_SQUID_PORT:-3128}, credentials in /root/autoproxy/squid-credentials.txt"

@@ -27,6 +27,16 @@ pkg_install() {
     "$PKG_MGR" install -y "$@"
 }
 
+system_update() {
+    log_info "Updating system packages (this can take a few minutes)..."
+    # openssh* is intentionally excluded: dnf update triggers a full sshd
+    # restart (systemctl try-restart), which would drop the very SSH
+    # session this script is usually piped in over, killing the script
+    # mid-run. Update openssh separately, deliberately, from a console.
+    "$PKG_MGR" update -y --exclude='openssh*' >/dev/null
+    log_info "System packages updated (openssh excluded — see README)."
+}
+
 random_password() {
     tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "${1:-20}"
 }

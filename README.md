@@ -7,8 +7,9 @@
 
 ## Что разворачивает
 
-0. **Отключает IPv6** и переводит fail2ban на бан через **firewalld**
-   (вместо голого iptables/ip6tables) — см. раздел ниже.
+0. **Обновляет систему** (`dnf update -y`, кроме `openssh*` — см. раздел
+   ниже), **отключает IPv6** и переводит fail2ban на бан через
+   **firewalld** (вместо голого iptables/ip6tables).
 1. **Squid** — forward-прокси с авторизацией по логину/паролю. В интернет
    пропускаются только авторизованные клиенты.
 2. **[MTProto FIX by MEKO](https://github.com/Mekotofeuka/MTPROTO_FIX_By_MEKO)**
@@ -32,10 +33,28 @@ curl -fsSL https://raw.githubusercontent.com/mydubrovin-dev/autoproxy/main/insta
 | `AUTOPROXY_SQUID_PASS`     | случайный    | Пароль для Squid              |
 | `AUTOPROXY_SQUID_PORT`     | `3128`       | Порт, на котором слушает Squid |
 | `AUTOPROXY_TRUSTED_IPS`     | (пусто)      | Доп. IP/подсети, которые fail2ban никогда не забанит (через пробел), в дополнение к дефолтным |
+| `AUTOPROXY_SKIP_UPDATE`     | (пусто)      | `1` — пропустить `dnf update -y` в начале установки |
 
 Учётные данные Squid всегда сохраняются в
 `/root/autoproxy/squid-credentials.txt` (доступ только root, права 600),
 независимо от того, были они сгенерированы автоматически или заданы вручную.
+
+### Обновление системы и openssh
+
+Первым делом скрипт выполняет `dnf update -y --exclude='openssh*'`.
+`openssh*` исключён намеренно: при обновлении пакет вызывает
+`systemctl try-restart sshd`, то есть **полный перезапуск демона**, а
+не reload — если вы запускаете скрипт через `curl | sudo bash` по SSH
+(обычный случай), это оборвёт текущую сессию прямо посреди установки,
+и скрипт не дойдёт до конца.
+
+Обновляйте `openssh*` отдельно и осознанно, желательно не по SSH, а из
+консоли хостинга/гипервизора (в Proxmox — Console/noVNC у самой VM):
+
+```bash
+dnf update -y 'openssh*'
+systemctl restart sshd
+```
 
 ### Белый список fail2ban
 
