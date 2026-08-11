@@ -33,7 +33,16 @@ system_update() {
     # restart (systemctl try-restart), which would drop the very SSH
     # session this script is usually piped in over, killing the script
     # mid-run. Update openssh separately, deliberately, from a console.
-    "$PKG_MGR" update -y --exclude='openssh*' >/dev/null
+    local extra_args=()
+    if [ "$PKG_MGR" = "dnf" ]; then
+        # Rocky/RHEL 9's legacy network-scripts package pins an old
+        # initscripts version and blocks the update outright unless dnf
+        # is allowed to erase it (it's deprecated in favor of
+        # NetworkManager anyway, which is what actually manages the
+        # network on these images).
+        extra_args+=(--allowerasing)
+    fi
+    "$PKG_MGR" update -y --exclude='openssh*' "${extra_args[@]}" >/dev/null
     log_info "System packages updated (openssh excluded — see README)."
 }
 

@@ -24,9 +24,16 @@
 и перезагрузитесь:
 
 ```bash
-dnf update -y
+dnf update -y --allowerasing
 reboot
 ```
+
+`--allowerasing` нужен из-за известного конфликта на Rocky/RHEL 9:
+устаревший `network-scripts` пинит старую версию `initscripts` и
+блокирует апдейт без него (dnf сам предлагает этот флаг в сообщении об
+ошибке). Пакет `network-scripts` — легаси, замена ему NetworkManager
+(он и так управляет сетью на актуальных образах), так что удаление
+безопасно, если вы не держите руками старые `ifcfg-*`-скрипты.
 
 Затем, на свежей машине CentOS/Rocky/RHEL, от root:
 
@@ -55,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/mydubrovin-dev/autoproxy/main/insta
 любое обновление ядра/OpenSSL/openssh применится штатно, с
 перезагрузкой, а не посреди работы скрипта.
 
-Сам `install.sh` тоже выполняет `dnf update -y`, но с
+Сам `install.sh` тоже выполняет `dnf update -y --allowerasing`, но с
 `--exclude='openssh*'`. Исключение намеренное: при обновлении пакет
 вызывает `systemctl try-restart sshd`, то есть **полный перезапуск
 демона**, а не reload — если скрипт запущен через `curl | sudo bash`
