@@ -27,6 +27,14 @@ ENV USER=root
 ENV LOGNAME=root
 ENV HOME=/root
 
+# Without this, MEKO/telemt's unguarded `systemctl ...` calls (this
+# container has no init system) fail with "command not found" and, since
+# several of those call sites run under `set -e` (main.sh itself does),
+# take the whole interactive menu down with them rather than just
+# printing a warning. See systemctl-shim.sh for details.
+COPY systemctl-shim.sh /usr/local/bin/systemctl
+RUN chmod +x /usr/local/bin/systemctl
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

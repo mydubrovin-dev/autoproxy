@@ -35,6 +35,7 @@ FILES=(
     lib/mtproto.sh
     docker/mtproto/Dockerfile
     docker/mtproto/entrypoint.sh
+    docker/mtproto/systemctl-shim.sh
 )
 
 fetch_remote_files() {
