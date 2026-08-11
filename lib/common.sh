@@ -29,20 +29,32 @@ pkg_install() {
 
 system_update() {
     log_info "Updating system packages (this can take a few minutes)..."
+
+    # Rocky/RHEL 9's legacy network-scripts package pins an old
+    # initscripts version and blocks `dnf update` outright. The tempting
+    # fix is --allowerasing, but that gives dnf free rein to erase *any*
+    # conflicting package to resolve the transaction — on at least one
+    # box it chose to erase NetworkManager instead, which took the
+    # network interface down (and with it, SSH). So: remove the actual
+    # offending package by name, only when it's safe to (NetworkManager
+    # is the one actually running the network already), and never hand
+    # dnf a blank cheque to erase things on our behalf.
+    if [ "$PKG_MGR" = "dnf" ] && rpm -q network-scripts >/dev/null 2>&1; then
+        if systemctl is-active --quiet NetworkManager; then
+            log_info "Removing legacy network-scripts (NetworkManager is running the network)..."
+            dnf remove -y network-scripts >/dev/null
+        else
+            log_warn "network-scripts is installed and NetworkManager is not active — leaving it in place (networking may depend on it). initscripts may not fully update."
+        fi
+    fi
+
     # openssh* is intentionally excluded: dnf update triggers a full sshd
     # restart (systemctl try-restart), which would drop the very SSH
     # session this script is usually piped in over, killing the script
     # mid-run. Update openssh separately, deliberately, from a console.
-    local extra_args=()
-    if [ "$PKG_MGR" = "dnf" ]; then
-        # Rocky/RHEL 9's legacy network-scripts package pins an old
-        # initscripts version and blocks the update outright unless dnf
-        # is allowed to erase it (it's deprecated in favor of
-        # NetworkManager anyway, which is what actually manages the
-        # network on these images).
-        extra_args+=(--allowerasing)
-    fi
-    "$PKG_MGR" update -y --exclude='openssh*' "${extra_args[@]}" >/dev/null
+    # NetworkManager* is excluded too, as a second line of defense: it
+    # must never be a candidate for removal by this step.
+    "$PKG_MGR" update -y --exclude='openssh*' --exclude='NetworkManager*' >/dev/null
     log_info "System packages updated (openssh excluded — see README)."
 }
 

@@ -24,16 +24,21 @@
 и перезагрузитесь:
 
 ```bash
-dnf update -y --allowerasing
+rpm -q network-scripts && systemctl is-active --quiet NetworkManager && dnf remove -y network-scripts
+dnf update -y
 reboot
 ```
 
-`--allowerasing` нужен из-за известного конфликта на Rocky/RHEL 9:
-устаревший `network-scripts` пинит старую версию `initscripts` и
-блокирует апдейт без него (dnf сам предлагает этот флаг в сообщении об
-ошибке). Пакет `network-scripts` — легаси, замена ему NetworkManager
-(он и так управляет сетью на актуальных образах), так что удаление
-безопасно, если вы не держите руками старые `ifcfg-*`-скрипты.
+Здесь известный конфликт на Rocky/RHEL 9: устаревший `network-scripts`
+пинит старую версию `initscripts` и блокирует апдейт без её удаления.
+`dnf` в сообщении об ошибке сам предлагает `--allowerasing` — **не
+делайте так**: это разрешает dnf стереть вообще любой конфликтующий
+пакет по своему выбору, а не именно `network-scripts`. На практике dnf
+может вместо него снести `NetworkManager` (или его зависимость) —
+именно так один раз уронило сеть на боевой машине. Правильно — убрать
+`network-scripts` явно по имени, и только если сетью реально управляет
+`NetworkManager` (проверка `systemctl is-active` выше как раз это
+гарантирует).
 
 Затем, на свежей машине CentOS/Rocky/RHEL, от root:
 
@@ -62,8 +67,10 @@ curl -fsSL https://raw.githubusercontent.com/mydubrovin-dev/autoproxy/main/insta
 любое обновление ядра/OpenSSL/openssh применится штатно, с
 перезагрузкой, а не посреди работы скрипта.
 
-Сам `install.sh` тоже выполняет `dnf update -y --allowerasing`, но с
-`--exclude='openssh*'`. Исключение намеренное: при обновлении пакет
+Сам `install.sh` делает то же самое (точечно убирает
+`network-scripts`, если это безопасно, без `--allowerasing`), и тоже с
+`--exclude='openssh*' --exclude='NetworkManager*'`. Исключение openssh
+намеренное: при обновлении пакет
 вызывает `systemctl try-restart sshd`, то есть **полный перезапуск
 демона**, а не reload — если скрипт запущен через `curl | sudo bash`
 по SSH (обычный случай), это оборвёт текущую сессию прямо посреди
