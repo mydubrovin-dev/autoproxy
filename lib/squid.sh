@@ -25,6 +25,22 @@ setup_squid() {
     chown root:squid /etc/squid/passwd
     chmod 640 /etc/squid/passwd
 
+    # /etc/autoproxy/squid-users.txt is the source of truth for logins
+    # going forward (see scripts/squid-users.sh) — only seed it on first
+    # install so re-running install.sh never clobbers users added later.
+    mkdir -p /etc/autoproxy
+    if [ ! -f /etc/autoproxy/squid-users.txt ]; then
+        cat > /etc/autoproxy/squid-users.txt <<EOF
+# One "username:password" per line. Blank lines and lines starting
+# with # are ignored. After editing, apply with:
+#   autoproxy-squid-users
+${user}:${pass}
+EOF
+        chmod 600 /etc/autoproxy/squid-users.txt
+    fi
+
+    install -m 755 "$INSTALL_DIR/scripts/squid-users.sh" /usr/local/bin/autoproxy-squid-users
+
     cat > /etc/squid/squid.conf <<EOF
 http_port ${port}
 

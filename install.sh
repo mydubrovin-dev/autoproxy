@@ -36,11 +36,12 @@ FILES=(
     docker/mtproto/Dockerfile
     docker/mtproto/entrypoint.sh
     docker/mtproto/systemctl-shim.sh
+    scripts/squid-users.sh
 )
 
 fetch_remote_files() {
     command -v curl >/dev/null 2>&1 || { echo "curl is required." >&2; exit 1; }
-    mkdir -p "$INSTALL_DIR/lib" "$INSTALL_DIR/docker/mtproto"
+    mkdir -p "$INSTALL_DIR/lib" "$INSTALL_DIR/docker/mtproto" "$INSTALL_DIR/scripts"
     for f in "${FILES[@]}"; do
         curl -fsSL "${REPO_RAW_BASE}/${f}" -o "${INSTALL_DIR}/${f}"
     done

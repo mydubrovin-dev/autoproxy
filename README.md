@@ -61,6 +61,36 @@ curl -fsSL https://raw.githubusercontent.com/mydubrovin-dev/autoproxy/main/insta
 `/root/autoproxy/squid-credentials.txt` (доступ только root, права 600),
 независимо от того, были они сгенерированы автоматически или заданы вручную.
 
+### Управление пользователями Squid
+
+Логины/пароли для Squid живут в отдельном текстовом файле
+`/etc/autoproxy/squid-users.txt` — не нужно лезть в `htpasswd` или
+`/etc/squid/passwd` руками.
+
+Формат — по одной паре `логин:пароль` на строку, пароль в открытом
+виде (хешируется при применении), пустые строки и строки с `#`
+игнорируются:
+
+```
+# /etc/autoproxy/squid-users.txt
+proxyuser:Xk9mPq2wRt7vLj4n
+alice:another-password
+bob:yet-another-password
+```
+
+После правки файла — применить и перезапустить Squid одной командой
+(ставится установщиком в `/usr/local/bin`):
+
+```bash
+autoproxy-squid-users
+```
+
+Скрипт **полностью пересобирает** `/etc/squid/passwd` из этого файла
+и делает `systemctl reload squid` (если reload недоступен — `restart`).
+Значит: убрали строку — пользователь теряет доступ; добавили — сразу
+получает. При первой установке файл создаётся автоматически с той же
+парой логин/пароль, что и в `squid-credentials.txt`.
+
 ### Обновление системы и openssh
 
 Рекомендуется обновить систему и перезагрузиться **вручную, до**
@@ -245,6 +275,10 @@ lib/
 docker/mtproto/
   Dockerfile                 образ для контейнера MTProto-fix
   entrypoint.sh                скачивает установщик MEKO, печатает инструкцию
+  systemctl-shim.sh             фейковый systemctl (в контейнере нет systemd)
+scripts/
+  squid-users.sh              пересобирает /etc/squid/passwd из squid-users.txt,
+                               ставится установщиком как autoproxy-squid-users
 ```
 
 ## Примечания
