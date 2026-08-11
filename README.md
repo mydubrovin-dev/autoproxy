@@ -29,10 +29,35 @@ curl -fsSL https://raw.githubusercontent.com/mydubrovin-dev/autoproxy/main/insta
 | `AUTOPROXY_SQUID_USER`     | `proxyuser`  | Логин для Squid              |
 | `AUTOPROXY_SQUID_PASS`     | случайный    | Пароль для Squid              |
 | `AUTOPROXY_SQUID_PORT`     | `3128`       | Порт, на котором слушает Squid |
+| `AUTOPROXY_TRUSTED_IPS`     | (пусто)      | Доп. IP/подсети, которые fail2ban никогда не забанит (через пробел), в дополнение к дефолтным |
 
 Учётные данные Squid всегда сохраняются в
 `/root/autoproxy/squid-credentials.txt` (доступ только root, права 600),
 независимо от того, были они сгенерированы автоматически или заданы вручную.
+
+### Белый список fail2ban
+
+По умолчанию fail2ban никогда не банит:
+
+```
+127.0.0.1/8  ::1
+81.211.68.176/28  212.24.52.192/28  217.22.164.0/28  77.51.177.244/32
+```
+
+Добавить свои адреса — через `AUTOPROXY_TRUSTED_IPS` (не заменяет
+дефолтный список, а дополняет его):
+
+```bash
+AUTOPROXY_TRUSTED_IPS="203.0.113.5 198.51.100.0/24" \
+  curl -fsSL https://raw.githubusercontent.com/mydubrovin-dev/autoproxy/main/install.sh | sudo bash
+```
+
+Правило `[sshd]` в MEKO/iptables-фиксе SSH-порт не трогает (в
+`data/rules.sh` он явно добавляет `ACCEPT` для SSH перед лимитами) —
+если после установки SSH недоступен, почти наверняка забанил именно
+fail2ban. `install.sh` при каждом запуске снимает все текущие баны
+(`fail2ban-client unban --all`), так что повторный запуск скрипта
+разблокирует доступ.
 
 ## Настройка MTProto / SNI (пошагово, вручную)
 
