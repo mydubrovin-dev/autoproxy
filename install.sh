@@ -76,6 +76,7 @@ source "$INSTALL_DIR/lib/mtproto.sh"
 
 log_info "Starting autoproxy install on $(source /etc/os-release; echo "$PRETTY_NAME")..."
 
+ensure_swap
 if [ "${AUTOPROXY_SKIP_UPDATE:-0}" = "1" ]; then
     log_warn "AUTOPROXY_SKIP_UPDATE=1 — skipping system update."
 else

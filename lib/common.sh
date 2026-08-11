@@ -27,6 +27,40 @@ pkg_install() {
     "$PKG_MGR" install -y "$@"
 }
 
+ensure_swap() {
+    if swapon --show --noheadings 2>/dev/null | grep -q .; then
+        log_info "Swap already configured, skipping."
+        return
+    fi
+
+    local total_mem_mb
+    total_mem_mb=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024))
+
+    if [ "$total_mem_mb" -ge 2048 ]; then
+        log_info "RAM is ${total_mem_mb}MB and no swap is configured — should be enough headroom, skipping swap."
+        return
+    fi
+
+    # `dnf update -y` alone regularly hits 600-700MB RSS on a full system
+    # update; on the common 512MB-1GB VPS tier with no swap, that's an
+    # instant OOM kill (seen in the wild: dnf killed on a 929MB box).
+    # docker build later can spike too. A swap file is cheap, reversible
+    # insurance against both.
+    local swap_mb=2048
+    log_warn "Low RAM (${total_mem_mb}MB) with no swap — dnf/docker build can get OOM-killed on small VPS instances. Creating a ${swap_mb}MB swap file at /swapfile..."
+
+    fallocate -l "${swap_mb}M" /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count="$swap_mb" status=none
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+    swapon /swapfile
+
+    if ! grep -q '^/swapfile ' /etc/fstab; then
+        echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    fi
+
+    log_info "Swap enabled: $(swapon --show --noheadings | awk '{print $3}')."
+}
+
 system_update() {
     log_info "Updating system packages (this can take a few minutes)..."
 
