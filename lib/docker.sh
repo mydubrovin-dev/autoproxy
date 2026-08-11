@@ -15,6 +15,17 @@ setup_docker() {
         pkg_install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null
     fi
 
-    systemctl enable --now docker >/dev/null 2>&1
+    systemctl enable docker >/dev/null 2>&1
+    # Always a hard restart, not just enable --now (which is a no-op if
+    # docker is already running from a previous install.sh run).
+    # ensure_firewalld/disable_ipv6 run before this and restart
+    # firewalld; firewalld restarting *after* docker has already set up
+    # its bridge NAT/masquerade rules wipes them, breaking outbound
+    # connectivity (DNS included) for anything on the default bridge
+    # network — which is exactly what `docker build`'s build sandbox
+    # uses, regardless of the app container's own --network host.
+    # Restarting docker here makes it reinstall those rules fresh every
+    # run instead of silently rotting after repeated re-runs.
+    systemctl restart docker
     log_info "Docker is running."
 }
