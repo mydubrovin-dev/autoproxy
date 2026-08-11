@@ -12,7 +12,8 @@ setup_fail2ban() {
     if [ "$PKG_MGR" = "dnf" ] && ! rpm -q epel-release >/dev/null 2>&1; then
         pkg_install epel-release >/dev/null 2>&1 || true
     fi
-    pkg_install fail2ban >/dev/null
+    # ipset is required by the firewallcmd-ipset ban action below.
+    pkg_install fail2ban firewalld ipset >/dev/null
 
     local logpath="/var/log/secure"
     [ -f /var/log/auth.log ] && logpath="/var/log/auth.log"
@@ -22,6 +23,9 @@ setup_fail2ban() {
         ignoreip="$ignoreip $AUTOPROXY_TRUSTED_IPS"
     fi
 
+    # Ban via firewalld (ipset + rich rules) instead of fail2ban's default
+    # raw iptables/ip6tables actions, which fight with firewalld for
+    # control of the same tables on Rocky/RHEL.
     cat > /etc/fail2ban/jail.local <<EOF
 [DEFAULT]
 bantime  = 1h
@@ -29,6 +33,8 @@ findtime = 10m
 maxretry = 5
 backend  = systemd
 ignoreip = ${ignoreip}
+banaction = firewallcmd-ipset
+banaction_allports = firewallcmd-allports
 
 [sshd]
 enabled  = true

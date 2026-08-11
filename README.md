@@ -7,6 +7,8 @@
 
 ## Что разворачивает
 
+0. **Отключает IPv6** и переводит fail2ban на бан через **firewalld**
+   (вместо голого iptables/ip6tables) — см. раздел ниже.
 1. **Squid** — forward-прокси с авторизацией по логину/паролю. В интернет
    пропускаются только авторизованные клиенты.
 2. **[MTProto FIX by MEKO](https://github.com/Mekotofeuka/MTPROTO_FIX_By_MEKO)**
@@ -59,6 +61,26 @@ fail2ban. `install.sh` при каждом запуске снимает все 
 (`fail2ban-client unban --all`), так что повторный запуск скрипта
 разблокирует доступ.
 
+### IPv6 и firewalld
+
+На Rocky/RHEL с включённым IPv6 firewalld периодически падает с
+ошибками про `ip6tables` (нет реального IPv6-трафика, а firewalld всё
+равно пытается им управлять). `install.sh` поэтому:
+
+- **Отключает IPv6** — сразу через sysctl
+  (`/etc/sysctl.d/99-autoproxy-disable-ipv6.conf`) и на уровне ядра
+  через `grubby --update-kernel=ALL --args="ipv6.disable=1"` (для
+  полного эффекта после перезагрузки).
+- Ставит `IPv6_rpfilter=no` в `/etc/firewalld/firewalld.conf`, чтобы
+  firewalld не пытался обслуживать несуществующий IPv6-стек.
+- Переключает fail2ban на бан через firewalld
+  (`banaction = firewallcmd-ipset` вместо голого iptables), чтобы
+  fail2ban и firewalld не боролись за одни и те же правила. Squid уже
+  и так открывает порт только через `firewall-cmd`.
+
+Всё это выполняется до установки Squid/fail2ban, поэтому даже при
+первом запуске конфликтов быть не должно.
+
 ## Настройка MTProto / SNI (пошагово, вручную)
 
 Установщик MEKO — интерактивное меню без флагов для автоматического
@@ -108,8 +130,9 @@ docker exec -it autoproxy-mtproto mekopr
 install.sh              точка входа (именно этот файл вы скачиваете curl'ом)
 lib/
   common.sh              логирование, проверка root/ОС, общие функции
+  security.sh              firewalld, отключение IPv6
   squid.sh                установка и настройка Squid с авторизацией
-  fail2ban.sh              установка fail2ban и jail для sshd
+  fail2ban.sh              установка fail2ban и jail для sshd (бан через firewalld)
   docker.sh                 установка Docker Engine
   mtproto.sh                 сборка и запуск контейнера MTProto-fix
 docker/mtproto/

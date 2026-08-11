@@ -24,6 +24,7 @@ REPO_RAW_BASE="https://raw.githubusercontent.com/mydubrovin-dev/autoproxy/main"
 INSTALL_DIR="/opt/autoproxy"
 FILES=(
     lib/common.sh
+    lib/security.sh
     lib/squid.sh
     lib/fail2ban.sh
     lib/docker.sh
@@ -56,6 +57,8 @@ fi
 export INSTALL_DIR
 # shellcheck source=lib/common.sh
 source "$INSTALL_DIR/lib/common.sh"
+# shellcheck source=lib/security.sh
+source "$INSTALL_DIR/lib/security.sh"
 # shellcheck source=lib/squid.sh
 source "$INSTALL_DIR/lib/squid.sh"
 # shellcheck source=lib/fail2ban.sh
@@ -67,6 +70,8 @@ source "$INSTALL_DIR/lib/mtproto.sh"
 
 log_info "Starting autoproxy install on $(source /etc/os-release; echo "$PRETTY_NAME")..."
 
+ensure_firewalld
+disable_ipv6
 setup_squid
 setup_fail2ban
 setup_docker
@@ -75,6 +80,8 @@ deploy_mtproto
 log_info "All done."
 echo
 echo "Summary:"
+echo "  - IPv6                : disabled"
+echo "  - firewalld            : running, fail2ban bans through it (not raw iptables)"
 echo "  - Squid forward proxy : port ${AUTOPROXY_SQUID_PORT:-3128}, credentials in /root/autoproxy/squid-credentials.txt"
 echo "  - fail2ban            : protecting sshd (bantime=1h, maxretry=5)"
 echo "  - MTProto-fix         : container '${MTPROTO_CONTAINER_NAME}' — finish setup with the command printed above"
