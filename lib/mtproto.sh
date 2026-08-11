@@ -10,12 +10,31 @@
 MTPROTO_CONTAINER_NAME="autoproxy-mtproto"
 MTPROTO_IMAGE_NAME="autoproxy/mtproto-fix"
 
+# MEKO/telemt store their state across a few different paths. Named
+# volumes for the ones worth keeping so that re-running install.sh
+# (which always `docker rm -f`s and recreates this container to pick up
+# image changes) doesn't wipe out a manual mekopr setup done previously:
+#   /opt        - MEKO manager (/opt/mtpr-simple), telemt workdir,
+#                 MTProto.zig (/opt/mtproto-proxy)
+#   /etc/telemt - telemt's actual config/secrets
+# Deliberately NOT volume-mounting /bin (where telemt's own binary
+# lands): on Debian 13 /bin is a symlink into /usr/bin (merged-usr), and
+# mounting a volume there risks shadowing every base binary in the
+# image. Re-fetching the telemt binary itself is one menu keypress
+# ("Установить/обновить/откатить Telemt" -> Enter) — cheap to redo,
+# unlike losing the manager or telemt's secrets.
+# MTG's single-file /etc/mtg.toml also isn't covered (not worth a
+# volume for one file) — only matters if you switch engines away from
+# Telemt/MTProto.zig.
+MTPROTO_VOLUME_OPT="autoproxy-mtproto-opt"
+MTPROTO_VOLUME_ETC_TELEMT="autoproxy-mtproto-etc-telemt"
+
 deploy_mtproto() {
     log_info "Building MTProto-fix container image..."
     docker build -t "$MTPROTO_IMAGE_NAME" "$INSTALL_DIR/docker/mtproto" >/dev/null
 
     if docker ps -a --format '{{.Names}}' | grep -qx "$MTPROTO_CONTAINER_NAME"; then
-        log_warn "Container ${MTPROTO_CONTAINER_NAME} already exists, recreating it."
+        log_warn "Container ${MTPROTO_CONTAINER_NAME} already exists, recreating it (its mekopr setup is kept in named volumes)."
         docker rm -f "$MTPROTO_CONTAINER_NAME" >/dev/null
     fi
 
@@ -25,6 +44,9 @@ deploy_mtproto() {
         --network host \
         --cap-add NET_ADMIN \
         --restart unless-stopped \
+        -v "${MTPROTO_VOLUME_OPT}:/opt" \
+        -v "${MTPROTO_VOLUME_ETC_TELEMT}:/etc/telemt" \
+        -e "AUTOPROXY_MTPROTO_PORT=${AUTOPROXY_MTPROTO_PORT:-443}" \
         "$MTPROTO_IMAGE_NAME" >/dev/null
 
     log_info "MTProto-fix container is running as '${MTPROTO_CONTAINER_NAME}'."
