@@ -1,80 +1,83 @@
 # autoproxy
 
-One-shot bootstrap for a fresh CentOS/Rocky/RHEL VPS that turns it into a
-proxy box. Download and run a single script — everything else is handled
-for you, except one interactive step for the MTProto/SNI setup (see below).
+Скрипт для разворачивания на свежем CentOS/Rocky/RHEL VPS готового
+прокси-сервера в один шаг. Скачали и запустили один скрипт — всё
+остальное настраивается само, кроме одного интерактивного шага для
+настройки MTProto/SNI (см. ниже).
 
-## What it sets up
+## Что разворачивает
 
-1. **Squid** forward proxy with login/password authentication. Only
-   authenticated clients are allowed through to the internet.
-2. **[MTProto FIX by MEKO](https://github.com/Mekotofeuka/MTPROTO_FIX_By_MEKO)**,
-   running in a Docker container (`--network host --cap-add NET_ADMIN`,
-   required because the fix manipulates the host's iptables rules).
-3. **fail2ban**, watching sshd and banning brute-force offenders.
+1. **Squid** — forward-прокси с авторизацией по логину/паролю. В интернет
+   пропускаются только авторизованные клиенты.
+2. **[MTProto FIX by MEKO](https://github.com/Mekotofeuka/MTPROTO_FIX_By_MEKO)**
+   в Docker-контейнере (`--network host --cap-add NET_ADMIN` — нужно,
+   потому что фикс правит iptables на хосте).
+3. **fail2ban** — следит за sshd и банит тех, кто ломится по SSH.
 
-## Usage
+## Использование
 
-On a fresh CentOS/Rocky/RHEL machine, as root:
+На свежей машине CentOS/Rocky/RHEL, от root:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mydubrovin-dev/autoproxy/main/install.sh | sudo bash
 ```
 
-Optional overrides (env vars, set before the pipe):
+Необязательные переопределения (переменные окружения, задать перед пайпом):
 
-| Variable                 | Default      | Description                     |
-|---------------------------|--------------|----------------------------------|
-| `AUTOPROXY_SQUID_USER`     | `proxyuser`  | Squid login username            |
-| `AUTOPROXY_SQUID_PASS`     | random       | Squid login password            |
-| `AUTOPROXY_SQUID_PORT`     | `3128`       | Squid listen port               |
+| Переменная              | По умолчанию | Описание                     |
+|--------------------------|--------------|--------------------------------|
+| `AUTOPROXY_SQUID_USER`     | `proxyuser`  | Логин для Squid              |
+| `AUTOPROXY_SQUID_PASS`     | случайный    | Пароль для Squid              |
+| `AUTOPROXY_SQUID_PORT`     | `3128`       | Порт, на котором слушает Squid |
 
-Squid credentials are always written to `/root/autoproxy/squid-credentials.txt`
-(root-only, mode 600) regardless of whether they were auto-generated or supplied.
+Учётные данные Squid всегда сохраняются в
+`/root/autoproxy/squid-credentials.txt` (доступ только root, права 600),
+независимо от того, были они сгенерированы автоматически или заданы вручную.
 
-## MTProto / SNI setup (one manual step)
+## Настройка MTProto / SNI (один ручной шаг)
 
-The upstream MEKO installer is an interactive menu with no flags for
-unattended use, so `install.sh` only prepares the container — you finish
-the proxy setup yourself, once:
+Установщик MEKO — интерактивное меню без флагов для автоматического
+режима, поэтому `install.sh` только готовит контейнер — саму настройку
+прокси нужно один раз выполнить вручную:
 
 ```bash
 docker exec -it autoproxy-mtproto bash /tmp/meko-install.sh
 ```
 
-In the menu: install a proxy (Telemt / MTG / MTProto.zig) → apply
-**MTProto FIX** ([1]) → check SNI ([7]) and use this domain:
+В меню: установить прокси (Telemt / MTG / MTProto.zig) → применить
+**MTProto FIX** ([1]) → проверить SNI ([7]) и указать этот домен:
 
 ```
 www.ite-ng.ru
 ```
 
-Re-open the menu any time with:
+Снова открыть меню в любой момент можно так:
 
 ```bash
 docker exec -it autoproxy-mtproto mekopr
 ```
 
-## Project layout
+## Структура проекта
 
 ```
-install.sh              bootstrap entrypoint (what you curl)
+install.sh              точка входа (именно этот файл вы скачиваете curl'ом)
 lib/
-  common.sh              logging, root/OS checks, shared helpers
-  squid.sh                Squid install + auth config
-  fail2ban.sh              fail2ban install + sshd jail
-  docker.sh                 Docker Engine install
-  mtproto.sh                 builds/runs the MTProto-fix container
+  common.sh              логирование, проверка root/ОС, общие функции
+  squid.sh                установка и настройка Squid с авторизацией
+  fail2ban.sh              установка fail2ban и jail для sshd
+  docker.sh                 установка Docker Engine
+  mtproto.sh                 сборка и запуск контейнера MTProto-fix
 docker/mtproto/
-  Dockerfile                 image for the MTProto-fix container
-  entrypoint.sh                fetches the MEKO installer, prints instructions
+  Dockerfile                 образ для контейнера MTProto-fix
+  entrypoint.sh                скачивает установщик MEKO, печатает инструкцию
 ```
 
-## Notes
+## Примечания
 
-- Targets CentOS/Rocky/RHEL (`dnf`/`yum`). Not tested on Debian/Ubuntu hosts.
-- Review `install.sh` before piping it into `bash` on a box you care about —
-  standard advice for any `curl | bash` installer, including this one.
-- Re-running `install.sh` is safe for Squid/fail2ban/Docker; the MTProto
-  container is recreated from scratch each time (any in-container MEKO
-  config is lost — reconfigure via `mekopr` afterwards).
+- Рассчитан на CentOS/Rocky/RHEL (`dnf`/`yum`). На Debian/Ubuntu не тестировался.
+- Перед тем как пускать `install.sh` через `curl | bash` на важной машине,
+  просмотрите его содержимое — обычная рекомендация для любого
+  `curl | bash`-установщика, этот не исключение.
+- Повторный запуск `install.sh` безопасен для Squid/fail2ban/Docker;
+  контейнер MTProto каждый раз пересоздаётся с нуля (вся настройка MEKO
+  внутри контейнера теряется — донастройте через `mekopr` заново).
