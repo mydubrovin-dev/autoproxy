@@ -4,7 +4,7 @@
 # Never banned, regardless of failed attempts. Override/extend with
 # AUTOPROXY_TRUSTED_IPS (space-separated IPs/CIDRs), e.g.:
 #   AUTOPROXY_TRUSTED_IPS="203.0.113.5 198.51.100.0/24" curl ... | sudo bash
-DEFAULT_TRUSTED_IPS="127.0.0.1/8 ::1 81.211.68.176/28 212.24.52.192/28 217.22.164.0/28 77.51.177.244/32"
+DEFAULT_TRUSTED_IPS="127.0.0.1/8 ::1 81.211.68.176/28 212.24.52.192/28 217.22.164.0/28 77.51.177.18/32"
 
 setup_fail2ban() {
     log_info "Installing fail2ban..."
