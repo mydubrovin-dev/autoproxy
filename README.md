@@ -56,7 +56,7 @@ curl -fsSL https://raw.githubusercontent.com/mydubrovin-dev/autoproxy/main/insta
 | `AUTOPROXY_SQUID_PORT`     | `3128`       | Порт, на котором слушает Squid |
 | `AUTOPROXY_TRUSTED_IPS`     | (пусто)      | Доп. IP/подсети, которые fail2ban никогда не забанит (через пробел), в дополнение к дефолтным |
 | `AUTOPROXY_SKIP_UPDATE`     | (пусто)      | `1` — пропустить `dnf update -y` в начале установки |
-| `AUTOPROXY_MTPROTO_PORT`     | `443`        | Порт, на который переприменяется SYN FIX при каждом старте контейнера MTProto (см. ниже) |
+| `AUTOPROXY_MTPROTO_PORT`     | `443`        | Порт MTProto: на него переприменяется SYN FIX при каждом старте контейнера, и он же открывается в firewalld (см. ниже) |
 
 Учётные данные Squid всегда сохраняются в
 `/root/autoproxy/squid-credentials.txt` (доступ только root, права 600),
@@ -187,6 +187,12 @@ firewalld после того, как Docker уже поднял свои NAT/ma
 Если у вас всё ещё старая версия скрипта и `docker build` падает
 именно так — просто `systemctl restart docker` вручную и повторите
 установку.
+
+**Порт MTProto (443 по умолчанию) тоже открывается в firewalld** —
+раньше `install.sh` открывал только порт Squid, и порт MTProto нужно
+было добавлять руками (`firewall-cmd --add-port=443/tcp --permanent`).
+Если у вас всё ещё старая версия скрипта — либо откройте порт вручную,
+либо просто перезапустите `install.sh`, он сам это сделает.
 
 ## Настройка MTProto / SNI (пошагово, вручную)
 

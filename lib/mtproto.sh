@@ -49,6 +49,13 @@ deploy_mtproto() {
         -e "AUTOPROXY_MTPROTO_PORT=${AUTOPROXY_MTPROTO_PORT:-443}" \
         "$MTPROTO_IMAGE_NAME" >/dev/null
 
+    # --network host means telemt binds directly to the host's socket,
+    # but that traffic still has to clear firewalld's own zone rules to
+    # get there in the first place — this was missing entirely before,
+    # so telemt could be up and listening and still be unreachable from
+    # outside.
+    firewalld_open_port "${AUTOPROXY_MTPROTO_PORT:-443}"
+
     log_info "MTProto-fix container is running as '${MTPROTO_CONTAINER_NAME}'."
     cat <<EOF
 
