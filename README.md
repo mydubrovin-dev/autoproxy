@@ -339,9 +339,11 @@ Telemt. (`/etc/telemt` смонтирована с хоста, так что ф�
 docker cp new-users.txt autoproxy-mtproto:/tmp/new-users.txt
 docker exec autoproxy-mtproto sed -i '/^\[access\.users\]/r /tmp/new-users.txt' /etc/telemt/telemt.toml
 docker exec autoproxy-mtproto chown telemt:telemt /etc/telemt/telemt.toml
-docker exec autoproxy-mtproto pkill telemt      # supervisor поднимет заново в течение ~10 с
-sleep 12 && docker exec autoproxy-mtproto tail -5 /var/log/telemt.log
+autoproxy-mtproto-restart      # проверит конфиг, перезапустит контейнер, покажет лог
 ```
+
+(`autoproxy-mtproto-restart` — отдельный скрипт, описан
+[ниже](#перезапуск-mtproto-и-применение-конфига).)
 
 Имена в `[access.users]` должны быть **уникальны** (в том числе не
 совпадать со стандартным пользователем `hello`, который создаёт
@@ -351,6 +353,47 @@ sleep 12 && docker exec autoproxy-mtproto tail -5 /var/log/telemt.log
 Одного пользователя можно добавить и вручную через `nano` в той же
 секции. Ссылку подключения для любого пользователя можно напечатать
 из меню: `mekopr` → `[3]` → Telemt → `[7]`.
+
+### Перезапуск MTProto и применение конфига
+
+После любой правки `/etc/telemt/telemt.toml` (новые пользователи,
+другой `tls_domain`) Telemt нужно перезапустить — сам он файл заново не
+читает. Для этого установщик кладёт в `/usr/local/bin` скрипт:
+
+```bash
+autoproxy-mtproto-restart           # проверить конфиг + перезапустить контейнер
+autoproxy-mtproto-restart --soft    # перезапустить только процесс telemt (контейнер и SYN FIX не трогаются)
+autoproxy-mtproto-restart --check   # только проверить конфиг, ничего не перезапуская
+autoproxy-mtproto-restart --force   # перезапустить, даже если проверка нашла проблемы
+```
+
+Что он делает:
+
+1. **Проверяет `telemt.toml`** — самые частые причины «после добавления
+   пользователей всё сломалось»:
+   - `tls_domain` должен быть обычным именем хоста (а не, например,
+     вставленной markdown-ссылкой `[www.ite-ng.ru](https://...)`);
+   - имена в `[access.users]` не повторяются (в т.ч. с дефолтным `hello`)
+     — иначе TOML не парсится и Telemt не стартует;
+   - у каждого пользователя секрет — ровно 32 hex-символа (если вставили
+     полный ключ из ссылки `ee…`, скрипт на это укажет — см.
+     [перенос пользователей](#перенос-существующих-пользователей-telegram-с-их-ключами)).
+
+   Если проблемы найдены — перезапуска не будет (чтобы не положить
+   работающий прокси кривым конфигом), пока не добавить `--force`.
+2. Делает `docker restart autoproxy-mtproto` (или `pkill telemt` в режиме
+   `--soft`). Перезапуск контейнера безопасен: бинарник Telemt, его
+   системный пользователь и данные из `/opt` и `/etc/telemt`
+   переживают именно `restart` (теряется только при *пересоздании*
+   контейнера, см. выше); при старте контейнер заново применяет SYN FIX.
+3. Ждёт до 60 с, пока Telemt поднимется и начнёт слушать порт (порт
+   берётся из `[server]` конфига), и печатает хвост
+   `/var/log/telemt.log`. Если не поднялся — говорит, почему: нет
+   бинарника (`/bin/telemt` не пережил пересоздание контейнера →
+   переустановить через меню) или смотрите лог.
+
+Клиенты на момент перезапуска отключаются на несколько секунд и
+переподключаются сами.
 
 ### Почему в контейнере нет systemd, и как это не ломает персистентность
 
@@ -443,6 +486,8 @@ docker/mtproto/
 scripts/
   squid-users.sh              пересобирает /etc/squid/passwd из squid-users.txt,
                                ставится установщиком как autoproxy-squid-users
+  mtproto-restart.sh           проверяет telemt.toml и перезапускает MTProto,
+                               ставится как autoproxy-mtproto-restart
 ```
 
 ## Примечания

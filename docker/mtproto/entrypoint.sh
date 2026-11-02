@@ -4,8 +4,13 @@ set -e
 MEKO_INSTALL_URL="https://raw.githubusercontent.com/Mekotofeuka/MTPROTO_FIX_By_MEKO/main/install.sh"
 MEKO_MAIN="/opt/mtpr-simple/main.sh"
 
-curl -fsSL "$MEKO_INSTALL_URL" -o /tmp/meko-install.sh
-chmod +x /tmp/meko-install.sh
+# Not fatal: on a plain `docker restart` the previous copy is still in
+# /tmp, and a GitHub hiccup must not put the container into a restart
+# loop (which would take telemt down with it).
+curl -fsSL "$MEKO_INSTALL_URL" -o /tmp/meko-install.sh.new \
+    && mv /tmp/meko-install.sh.new /tmp/meko-install.sh \
+    || echo "[autoproxy] Could not fetch the MEKO installer (offline?) — continuing."
+chmod +x /tmp/meko-install.sh 2>/dev/null || true
 
 # /opt (named volume) and /etc/telemt (host bind mount) — see lib/mtproto.sh — so a
 # mekopr setup done in a previous container survives `docker rm -f` +

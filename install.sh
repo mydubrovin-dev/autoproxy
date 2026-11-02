@@ -37,6 +37,7 @@ FILES=(
     docker/mtproto/entrypoint.sh
     docker/mtproto/systemctl-shim.sh
     scripts/squid-users.sh
+    scripts/mtproto-restart.sh
 )
 
 fetch_remote_files() {

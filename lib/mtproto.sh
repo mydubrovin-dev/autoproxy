@@ -57,6 +57,8 @@ deploy_mtproto() {
 
     migrate_telemt_etc
 
+    install -m 755 "$INSTALL_DIR/scripts/mtproto-restart.sh" /usr/local/bin/autoproxy-mtproto-restart
+
     if docker ps -a --format '{{.Names}}' | grep -qx "$MTPROTO_CONTAINER_NAME"; then
         log_warn "Container ${MTPROTO_CONTAINER_NAME} already exists, recreating it (its mekopr setup is kept in the /opt volume and ${MTPROTO_TELEMT_ETC_DIR})."
         docker rm -f "$MTPROTO_CONTAINER_NAME" >/dev/null
