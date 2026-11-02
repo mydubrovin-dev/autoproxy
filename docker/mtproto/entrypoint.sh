@@ -55,10 +55,62 @@ reapply_synfix
 # telemt's own installer) if not. Runs for the lifetime of the
 # container, independent of whatever mekopr's menu thinks "restart"
 # means (which just calls the shimmed, no-op systemctl).
+#
+# The telemt binary (/bin/telemt), its system user and its file
+# capability live in the container's own writable layer, which
+# `docker rm` (i.e. every install.sh run) throws away — leaving /etc/telemt
+# intact but nothing to run. So the loop also keeps a copy of the binary
+# on the persisted /opt volume, and restore_telemt() below puts it back
+# (with the same user/uid and setcap) when the container is recreated.
+TELEMT_PERSIST_DIR="/opt/.autoproxy"
+TELEMT_PERSIST_BIN="${TELEMT_PERSIST_DIR}/telemt"
+
+restore_telemt() {
+    [ -x /bin/telemt ] && return 0
+    [ -f "$TELEMT_PERSIST_BIN" ] || return 0
+    echo "[autoproxy] telemt binary missing (container was recreated) — restoring from ${TELEMT_PERSIST_BIN}"
+    cp -p "$TELEMT_PERSIST_BIN" /bin/telemt
+    chmod 755 /bin/telemt
+
+    if ! id telemt >/dev/null 2>&1; then
+        # Reuse the numeric uid/gid that already own /etc/telemt (it's a
+        # host bind mount, so they survived), falling back to fresh
+        # system ids if those are taken.
+        local uid gid nologin
+        uid="$(stat -c %u /etc/telemt 2>/dev/null || echo 0)"
+        gid="$(stat -c %g /etc/telemt 2>/dev/null || echo 0)"
+        nologin="$(command -v nologin || echo /bin/false)"
+        if [ "$gid" != 0 ]; then groupadd -r -g "$gid" telemt 2>/dev/null || groupadd -r telemt; else groupadd -r telemt; fi
+        if [ "$uid" != 0 ]; then
+            useradd -r -u "$uid" -g telemt -d /opt/telemt -s "$nologin" -c "Telemt Proxy" telemt 2>/dev/null \
+                || useradd -r -g telemt -d /opt/telemt -s "$nologin" -c "Telemt Proxy" telemt
+        else
+            useradd -r -g telemt -d /opt/telemt -s "$nologin" -c "Telemt Proxy" telemt
+        fi
+    fi
+    mkdir -p /opt/telemt
+    chown telemt:telemt /opt/telemt /etc/telemt
+    chmod 750 /opt/telemt /etc/telemt
+    [ -f /etc/telemt/telemt.toml ] && chown root:telemt /etc/telemt/telemt.toml && chmod 640 /etc/telemt/telemt.toml
+
+    # Same capabilities telemt's installer grants when there's no systemd
+    # (needed to bind :443 as a non-root user).
+    if command -v setcap >/dev/null 2>&1; then
+        setcap cap_net_bind_service,cap_net_admin=+ep /bin/telemt 2>/dev/null || true
+    fi
+}
+restore_telemt || echo "[autoproxy] restoring telemt failed — reinstall it from the mekopr Telemt menu."
+
 supervise_telemt() {
     local bin="/bin/telemt"
     local cfg="/etc/telemt/telemt.toml"
     while true; do
+        # Keep the persisted copy current (installer put a new/updated one).
+        if [ -x "$bin" ] && { [ ! -f "$TELEMT_PERSIST_BIN" ] || [ "$bin" -nt "$TELEMT_PERSIST_BIN" ]; }; then
+            mkdir -p "$TELEMT_PERSIST_DIR" \
+                && cp -p "$bin" "${TELEMT_PERSIST_BIN}.tmp" \
+                && mv -f "${TELEMT_PERSIST_BIN}.tmp" "$TELEMT_PERSIST_BIN"
+        fi
         if [ -x "$bin" ] && [ -f "$cfg" ] && id telemt >/dev/null 2>&1; then
             if ! pgrep -f "^${bin} ${cfg}\$" >/dev/null 2>&1; then
                 echo "[autoproxy] telemt not running — starting it (logs: /var/log/telemt.log)"
@@ -84,9 +136,12 @@ cat <<EOF
  Recommended SNI domain: www.ite-ng.ru
 
  /opt persists in a named Docker volume and /etc/telemt is the same
- directory on the host, so that setup survives container recreation. The telemt binary itself (/bin) does
- not — if missing after a recreate, just reinstall it from the Telemt
- menu (Enter for latest version), it takes a few seconds.
+ directory on the host, so that setup survives container recreation.
+ The telemt binary (/bin) is copied to /opt/.autoproxy within ~10s of
+ being installed and restored (with its user and capabilities) when the
+ container is recreated. If it was never installed, or was installed
+ by an older version of this image, install it once from the Telemt
+ menu (Enter for latest version) — it takes a few seconds.
 
  telemt itself is supervised by this entrypoint (checked/restarted
  every 10s) since there's no systemd/openrc in here for it to use —

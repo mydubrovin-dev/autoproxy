@@ -142,7 +142,7 @@ if [ "$up" -eq 1 ]; then
 else
     echo "FAILED: telemt is not up on port ${port}." >&2
     if ! docker exec "$NAME" test -x /bin/telemt 2>/dev/null; then
-        echo "  /bin/telemt is missing in the container (it is not persisted across container recreation)." >&2
+        echo "  /bin/telemt is missing in the container and there is no saved copy in /opt/.autoproxy to restore." >&2
         echo "  Reinstall it: docker exec -it $NAME mekopr  ->  [3] -> Telemt -> [1] -> Enter" >&2
     else
         echo "  Read the log above; run 'autoproxy-mtproto-restart --check' to re-validate the config." >&2
