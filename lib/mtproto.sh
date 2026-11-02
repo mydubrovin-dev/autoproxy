@@ -46,7 +46,6 @@ deploy_mtproto() {
         --restart unless-stopped \
         -v "${MTPROTO_VOLUME_OPT}:/opt" \
         -v "${MTPROTO_VOLUME_ETC_TELEMT}:/etc/telemt" \
-        -e "AUTOPROXY_MTPROTO_PORT=${AUTOPROXY_MTPROTO_PORT:-443}" \
         "$MTPROTO_IMAGE_NAME" >/dev/null
 
     # --network host means telemt binds directly to the host's socket,

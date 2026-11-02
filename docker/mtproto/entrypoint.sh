@@ -9,18 +9,36 @@ chmod +x /tmp/meko-install.sh
 
 # /opt and /etc/telemt are named volumes (see lib/mtproto.sh), so a
 # mekopr setup done in a previous container survives `docker rm -f` +
-# recreate. If it's there, pick back up where it left off: MEKO/telemt
-# have no systemd inside this container to reapply the SYN-FIX rules on
-# boot with (there's no init system at all here), so we do that job
-# ourselves on every container start instead — cheap and idempotent
-# enough (harmless no-op if the rules are already live, e.g. on a plain
-# container restart rather than a host reboot).
+# recreate. If it's there, restore the `mekopr` command.
 if [ -f "$MEKO_MAIN" ]; then
-    echo "[autoproxy] Existing mekopr setup found — restoring 'mekopr' command and reapplying SYN-FIX..."
     ln -sf "$MEKO_MAIN" /usr/local/bin/mekopr
-    "$MEKO_MAIN" -auto_install "${AUTOPROXY_MTPROTO_PORT:-443}" || \
-        echo "[autoproxy] SYN-FIX reapply skipped/failed (likely already active) — check with: docker exec -it <container> mekopr"
 fi
+
+# MEKO's SYN-FIX normally persists via a systemd unit
+# (mtpr-nft-synfix.service / mtpr-synfix.service) whose ExecStart just
+# runs a script MEKO saved under /opt/mtpr-simple. There's no systemd in
+# this container, so those units never start. Run the saved script
+# ourselves on every container start instead — it's what the unit would
+# have done, it honours whichever variant was picked in the menu
+# (nftables vs iptables), and it's idempotent (the nft script drops and
+# recreates its own table; the iptables one flushes its own chain). On a
+# plain container restart the rules are already live and this is a
+# no-op; after a host reboot (kernel netfilter state wiped) it restores
+# protection.
+reapply_synfix() {
+    local nft_script="/opt/mtpr-simple/mtpr-synfix-nft.sh"
+    local ipt_script="/opt/mtpr-simple/apply-mtpr-synfix.sh"
+    if [ -f "$nft_script" ]; then
+        echo "[autoproxy] Reapplying SYN-FIX (nftables) from $nft_script"
+        /bin/sh "$nft_script" || echo "[autoproxy] nftables SYN-FIX reapply failed — check: docker exec -it <container> mekopr"
+    elif [ -f "$ipt_script" ]; then
+        echo "[autoproxy] Reapplying SYN-FIX (iptables) from $ipt_script"
+        bash "$ipt_script" || echo "[autoproxy] iptables SYN-FIX reapply failed — check: docker exec -it <container> mekopr"
+    else
+        echo "[autoproxy] No saved SYN-FIX script under /opt/mtpr-simple — nothing to reapply (apply it once via mekopr menu [1])."
+    fi
+}
+reapply_synfix
 
 # telemt's own installer only *starts* the daemon via systemd or openrc
 # (see install_service() upstream) — with neither available here, it

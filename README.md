@@ -56,7 +56,7 @@ curl -fsSL https://raw.githubusercontent.com/mydubrovin-dev/autoproxy/main/insta
 | `AUTOPROXY_SQUID_PORT`     | `3128`       | Порт, на котором слушает Squid |
 | `AUTOPROXY_TRUSTED_IPS`     | (пусто)      | Доп. IP/подсети, которые fail2ban никогда не забанит (через пробел), в дополнение к дефолтным |
 | `AUTOPROXY_SKIP_UPDATE`     | (пусто)      | `1` — пропустить `dnf update -y` в начале установки |
-| `AUTOPROXY_MTPROTO_PORT`     | `443`        | Порт MTProto: на него переприменяется SYN FIX при каждом старте контейнера, и он же открывается в firewalld (см. ниже) |
+| `AUTOPROXY_MTPROTO_PORT`     | `443`        | Порт MTProto, который `install.sh` открывает в firewalld (порт самого SYN FIX задаётся в меню MEKO и сохраняется в его скрипте) |
 
 Учётные данные Squid всегда сохраняются в
 `/root/autoproxy/squid-credentials.txt` (доступ только root, права 600),
@@ -256,6 +256,100 @@ MTG/MTProto.zig пункты 4–6 будут отличаться, а всё о
 docker exec -it autoproxy-mtproto mekopr
 ```
 
+### Перенос существующих пользователей Telegram (с их ключами)
+
+Пользователи Telemt живут в `/etc/telemt/telemt.toml`, секция
+`[access.users]`, одна строка на пользователя — **имя и ровно 32
+hex-символа секрета**:
+
+```toml
+[access.users]
+hello = "0123456789abcdef0123456789abcdef"
+alice = "fedcba9876543210fedcba9876543210"
+```
+
+Обычно же «ключ» пользователя у вас на руках в виде `имя : ключ`, где
+ключ — это **полный секрет из ссылки подключения** (`secret=...` в
+`tg://proxy?...` / `t.me/proxy?...`), а он состоит из **трёх склеенных
+частей**:
+
+```
+ee  0123456789abcdef0123456789abcdef  7777772e6974652d6e672e7275
+└┬┘ └──────────────┬───────────────┘  └────────────┬───────────┘
+префикс        сам секрет             домен FakeTLS в hex (здесь www.ite-ng.ru)
+(2 симв.)     (32 hex-символа)
+```
+
+В `telemt.toml` нужна **только средняя часть** — 32 символа секрета.
+Первые два символа (`ee`; в режиме secure — `dd`) и хвост с доменом
+нужно **вырезать**. Если у человека уже «голый» ключ из 32 символов —
+берётся как есть (не отрезайте от него `ee`: у настоящего секрета эти
+символы могут быть просто началом).
+
+Вырезать руками из полного ключа: символы с 3-го по 34-й:
+
+```bash
+echo 'ee0123456789abcdef0123456789abcdef7777772e6974652d6e672e7275' | cut -c3-34
+# 0123456789abcdef0123456789abcdef
+```
+
+А хвост (символы с 35-го) — это домен, его можно расшифровать и
+проверить:
+
+```bash
+echo 'ee0123456789abcdef0123456789abcdef7777772e6974652d6e672e7275' | cut -c35- \
+  | python3 -c 'import sys; print(bytes.fromhex(sys.stdin.read().strip()).decode())'
+# www.ite-ng.ru
+```
+
+**Важно про домен.** Секрет в ссылке пользователя «запоминает» домен, с
+которым клиент идёт на сервер (SNI). Если он **не совпадает** с
+`tls_domain` в `telemt.toml`, Telemt отбрасывает такое подключение
+(`TLS handshake rejected by unknown SNI policy ... Unknown TLS SNI` в
+`/var/log/telemt.log`). Поэтому либо хвост старых ключей расшифровывается
+в тот же домен, что стоит у вас в `tls_domain` (`www.ite-ng.ru`) — тогда
+старые ссылки продолжат работать без правок на клиентах, — либо
+пользователям придётся выдать новые ссылки (с новым доменом). Один
+экземпляр Telemt работает с одним `tls_domain`.
+
+**Массовое добавление.** Положите ключи в файл `tg-users.txt` (по
+строке `имя : ключ`, пробелы вокруг `:` не мешают, ключи можно в
+любом из видов выше) и сгенерируйте строки для конфига:
+
+```bash
+while IFS=: read -r name key; do
+    name=$(echo "$name" | xargs); key=$(echo "$key" | xargs | tr 'A-F' 'a-f')
+    [ -z "$name" ] && continue
+    [ "${#key}" -ne 32 ] && { key=${key#ee}; key=${key#dd}; }   # полный ключ -> срезаем префикс
+    secret=${key:0:32}                                          # и хвост с доменом
+    [[ $secret =~ ^[0-9a-f]{32}$ ]] || { echo "# ПРОПУЩЕНО (не 32 hex): $name" >&2; continue; }
+    [[ $name =~ ^[A-Za-z0-9_-]+$ ]] || name="\"$name\""         # нестандартные имена — в кавычки
+    echo "$name = \"$secret\""
+done < tg-users.txt > new-users.txt
+
+cat new-users.txt        # глазами проверить результат
+```
+
+Затем вставить эти строки в секцию `[access.users]` и перезапустить
+Telemt:
+
+```bash
+docker cp new-users.txt autoproxy-mtproto:/tmp/new-users.txt
+docker exec autoproxy-mtproto sed -i '/^\[access\.users\]/r /tmp/new-users.txt' /etc/telemt/telemt.toml
+docker exec autoproxy-mtproto chown telemt:telemt /etc/telemt/telemt.toml
+docker exec autoproxy-mtproto pkill telemt      # supervisor поднимет заново в течение ~10 с
+sleep 12 && docker exec autoproxy-mtproto tail -5 /var/log/telemt.log
+```
+
+Имена в `[access.users]` должны быть **уникальны** (в том числе не
+совпадать со стандартным пользователем `hello`, который создаёт
+установщик Telemt — при совпадении TOML не распарсится и Telemt не
+стартует; ненужного `hello` проще удалить:
+`docker exec -it autoproxy-mtproto nano /etc/telemt/telemt.toml`).
+Одного пользователя можно добавить и вручную через `nano` в той же
+секции. Ссылку подключения для любого пользователя можно напечатать
+из меню: `mekopr` → `[3]` → Telemt → `[7]`.
+
 ### Почему в контейнере нет systemd, и как это не ломает персистентность
 
 MEKO и сам Telemt рассчитаны на systemd — им нужен, чтобы
@@ -285,15 +379,25 @@ MEKO и сам Telemt рассчитаны на systemd — им нужен, ч�
   образа). Это не страшно: если после пересоздания контейнера
   `mekopr` пишет, что Telemt не установлен — просто зайдите в меню
   Telemt и нажмите **1** → Enter (последняя версия), это пара секунд.
-- SYN FIX (то, что не смог сохранить как systemd-сервис) вместо этого
+- SYN FIX (то, что не смог сохранить как systemd-сервис
+  `mtpr-nft-synfix.service` / `mtpr-synfix.service`) вместо этого
   **переприменяется самим `entrypoint.sh` при каждом старте
-  контейнера** — вызовом `main.sh -auto_install $AUTOPROXY_MTPROTO_PORT`
-  (порт по умолчанию 443, переопределяется той же переменной
-  `AUTOPROXY_MTPROTO_PORT`). На простом `docker restart` это
-  безобидный no-op (правила уже стоят), а после **перезагрузки хоста**
-  (когда таблицы netfilter реально стираются ядром) — именно это и
-  восстанавливает защиту без необходимости заходить в меню руками.
-  Проверить статус в любой момент: `docker exec -it autoproxy-mtproto mekopr`.
+  контейнера**: юнит MEKO по сути лишь запускает сохранённый скрипт
+  (`/opt/mtpr-simple/mtpr-synfix-nft.sh` для nftables или
+  `/opt/mtpr-simple/apply-mtpr-synfix.sh` для iptables — лежат на
+  volume `/opt`), его и запускает `entrypoint.sh`. Так сохраняется тот
+  вариант, что вы выбрали в меню (раньше вызывался `main.sh
+  -auto_install`, который всегда ставил iptables-вариант — из-за чего
+  выбранный nftables после рестарта не поднимался). На простом
+  `docker restart` это безобидный no-op (скрипты сами пересоздают свою
+  таблицу/цепочку), а после **перезагрузки хоста** (netfilter
+  стирается ядром) — восстанавливает защиту без захода в меню. Пакет
+  `nftables` запечён в образ, чтобы скрипт работал и после
+  пересоздания контейнера.
+  Проверить статус: `docker exec -it autoproxy-mtproto mekopr` (шим
+  `systemctl` отвечает «активен» по факту наличия таблицы/цепочки, так
+  что в шапке меню будет «Установлен», а не «сервис не запущен»), либо
+  `nft list table inet mtpr_synfix` на хосте.
 - **Сам процесс Telemt тоже никто не запускает без systemd/openrc** —
   это отдельная проблема от SYN FIX. У апстримного установщика Telemt
   (`install_service()`) при отсутствии обоих просто печатает подсказку

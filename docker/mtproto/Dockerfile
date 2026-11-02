@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         wget \
         ca-certificates \
         iptables \
+        nftables \
         iproute2 \
         procps \
         sudo \
