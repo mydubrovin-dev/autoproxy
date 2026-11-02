@@ -7,7 +7,7 @@ MEKO_MAIN="/opt/mtpr-simple/main.sh"
 curl -fsSL "$MEKO_INSTALL_URL" -o /tmp/meko-install.sh
 chmod +x /tmp/meko-install.sh
 
-# /opt and /etc/telemt are named volumes (see lib/mtproto.sh), so a
+# /opt (named volume) and /etc/telemt (host bind mount) — see lib/mtproto.sh — so a
 # mekopr setup done in a previous container survives `docker rm -f` +
 # recreate. If it's there, restore the `mekopr` command.
 if [ -f "$MEKO_MAIN" ]; then
@@ -78,8 +78,8 @@ cat <<EOF
  Menu: install a proxy -> [1] Apply MTProto FIX -> [7] Check SNI
  Recommended SNI domain: www.ite-ng.ru
 
- /opt and /etc/telemt persist in named Docker volumes, so that setup
- survives container recreation. The telemt binary itself (/bin) does
+ /opt persists in a named Docker volume and /etc/telemt is the same
+ directory on the host, so that setup survives container recreation. The telemt binary itself (/bin) does
  not — if missing after a recreate, just reinstall it from the Telemt
  menu (Enter for latest version), it takes a few seconds.
 

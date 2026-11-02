@@ -10,13 +10,16 @@
 MTPROTO_CONTAINER_NAME="autoproxy-mtproto"
 MTPROTO_IMAGE_NAME="autoproxy/mtproto-fix"
 
-# MEKO/telemt store their state across a few different paths. Named
-# volumes for the ones worth keeping so that re-running install.sh
-# (which always `docker rm -f`s and recreates this container to pick up
-# image changes) doesn't wipe out a manual mekopr setup done previously:
-#   /opt        - MEKO manager (/opt/mtpr-simple), telemt workdir,
-#                 MTProto.zig (/opt/mtproto-proxy)
-#   /etc/telemt - telemt's actual config/secrets
+# MEKO/telemt store their state across a few different paths. The ones
+# worth keeping are persisted outside the container so that re-running
+# install.sh (which always `docker rm -f`s and recreates this container
+# to pick up image changes) doesn't wipe out a manual mekopr setup:
+#   /opt        - named volume: MEKO manager (/opt/mtpr-simple), telemt
+#                 workdir, MTProto.zig (/opt/mtproto-proxy)
+#   /etc/telemt - bind mount of the SAME path on the host, so telemt's
+#                 config/secrets (telemt.toml) can be read and edited
+#                 directly on the host (and are obvious to back up),
+#                 not buried under /var/lib/docker/volumes/...
 # Deliberately NOT volume-mounting /bin (where telemt's own binary
 # lands): on Debian 13 /bin is a symlink into /usr/bin (merged-usr), and
 # mounting a volume there risks shadowing every base binary in the
@@ -27,14 +30,35 @@ MTPROTO_IMAGE_NAME="autoproxy/mtproto-fix"
 # volume for one file) — only matters if you switch engines away from
 # Telemt/MTProto.zig.
 MTPROTO_VOLUME_OPT="autoproxy-mtproto-opt"
-MTPROTO_VOLUME_ETC_TELEMT="autoproxy-mtproto-etc-telemt"
+MTPROTO_TELEMT_ETC_DIR="/etc/telemt"
+# Earlier versions kept /etc/telemt in this named volume instead.
+MTPROTO_LEGACY_VOLUME_ETC_TELEMT="autoproxy-mtproto-etc-telemt"
+
+# One-time move from the old named volume to the host directory: only if
+# the old volume exists and the host dir is still empty, so it never
+# overwrites anything and re-runs are no-ops. The old volume is left in
+# place (harmless; `docker volume rm` it once you've checked).
+migrate_telemt_etc() {
+    mkdir -p "$MTPROTO_TELEMT_ETC_DIR"
+    if docker volume inspect "$MTPROTO_LEGACY_VOLUME_ETC_TELEMT" >/dev/null 2>&1 \
+        && [ -z "$(ls -A "$MTPROTO_TELEMT_ETC_DIR" 2>/dev/null)" ]; then
+        local old
+        old="$(docker volume inspect -f '{{ .Mountpoint }}' "$MTPROTO_LEGACY_VOLUME_ETC_TELEMT")"
+        if [ -n "$(ls -A "$old" 2>/dev/null)" ]; then
+            log_info "Migrating telemt config from Docker volume ${MTPROTO_LEGACY_VOLUME_ETC_TELEMT} to ${MTPROTO_TELEMT_ETC_DIR}..."
+            cp -a "$old"/. "$MTPROTO_TELEMT_ETC_DIR"/
+        fi
+    fi
+}
 
 deploy_mtproto() {
     log_info "Building MTProto-fix container image..."
     docker build -t "$MTPROTO_IMAGE_NAME" "$INSTALL_DIR/docker/mtproto" >/dev/null
 
+    migrate_telemt_etc
+
     if docker ps -a --format '{{.Names}}' | grep -qx "$MTPROTO_CONTAINER_NAME"; then
-        log_warn "Container ${MTPROTO_CONTAINER_NAME} already exists, recreating it (its mekopr setup is kept in named volumes)."
+        log_warn "Container ${MTPROTO_CONTAINER_NAME} already exists, recreating it (its mekopr setup is kept in the /opt volume and ${MTPROTO_TELEMT_ETC_DIR})."
         docker rm -f "$MTPROTO_CONTAINER_NAME" >/dev/null
     fi
 
@@ -45,7 +69,7 @@ deploy_mtproto() {
         --cap-add NET_ADMIN \
         --restart unless-stopped \
         -v "${MTPROTO_VOLUME_OPT}:/opt" \
-        -v "${MTPROTO_VOLUME_ETC_TELEMT}:/etc/telemt" \
+        -v "${MTPROTO_TELEMT_ETC_DIR}:/etc/telemt:z" \
         "$MTPROTO_IMAGE_NAME" >/dev/null
 
     # --network host means telemt binds directly to the host's socket,
